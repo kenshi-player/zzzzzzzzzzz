@@ -55,42 +55,43 @@ fn run_test_case(test_dir_path: &Path) {
     );
 }
 
-#[test]
-fn test_simple_case() {
-    run_test_case(&PathBuf::from_str("tests/test_cases/simple").unwrap())
+macro_rules! test_case {
+    ($($test_name:expr),+) => {
+        paste::paste! {
+        $(
+            #[test]
+            fn [<test_ $test_name _case>]() {
+                run_test_case(&PathBuf::from_str(
+                    concat!("tests/test_cases/", stringify!($test_name))
+                ).unwrap())
+            }
+        )+
+        }
+    };
 }
 
-#[test]
-fn test_no_headers_case() {
-    run_test_case(&PathBuf::from_str("tests/test_cases/no_headers").unwrap())
-}
-
-#[test]
-fn test_spaces_case() {
-    run_test_case(&PathBuf::from_str("tests/test_cases/spaces").unwrap())
-}
-
-#[test]
-fn test_chargeback_case() {
-    run_test_case(&PathBuf::from_str("tests/test_cases/chargeback").unwrap())
-}
-
-#[test]
-fn test_1_case() {
-    run_test_case(&PathBuf::from_str("tests/test_cases/1").unwrap())
-}
-
-#[test]
-fn test_2_case() {
-    run_test_case(&PathBuf::from_str("tests/test_cases/2").unwrap())
-}
-
-#[test]
-fn test_3_case() {
-    run_test_case(&PathBuf::from_str("tests/test_cases/3").unwrap())
-}
-
-#[test]
-fn test_4_case() {
-    run_test_case(&PathBuf::from_str("tests/test_cases/4").unwrap())
-}
+test_case!(
+    // expected state changes
+    deposit_withdraw,
+    chargeback,
+    resolve,
+    // parsing
+    no_headers,
+    spaces,
+    // edge cases
+    // if a deposit is disputed/resolved many times will it work as expected?
+    multi_dispute,
+    // will a withdrawal not happen if not enough funds
+    withdrawal_fail,
+    // after a chargeback will a client be frozen (nothing can change its balance anymore)
+    freeze_after_chargeback,
+    // will many doing deposit_withdraw cause issues?
+    many_clients_isolation,
+    // are mistakes from the spec ignored?
+    partner_mistakes_are_ignored,
+    // AI generated
+    1,
+    2,
+    3,
+    4
+);

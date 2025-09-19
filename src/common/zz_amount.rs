@@ -33,105 +33,127 @@ impl IntFromBytes for BigUint {
 }
 
 /// A simple struct implementation for the use case of unbounded integer part and up to 4 digits of
-/// precision for decimal.
-///
-/// FIXME(perf): the methods for this struct were built on demand (e.g. some only exist for ZzIAmount) and the lack of
-/// flexibility of this struct for handling references is causing excessive copying in the project.
+/// precision for decimal. This is done by serializing/deserializing the struct into the big int
+/// divided by 10_000
 #[derive(Debug, Clone, PartialEq)]
 pub struct ZzAmount<Int: IntFromBytes> {
     integer: Int,
-    decimal: u32,
 }
 
 pub type ZzUAmount = ZzAmount<BigUint>;
 pub type ZzIAmount = ZzAmount<BigInt>;
 
 impl<Int: IntFromBytes> ZzAmount<Int> {
-    /// Returns Some(...) if decimal is a value between 0..10000, returns None otherwise
-    pub fn new(integer: Int, decimal: u32) -> Option<Self> {
-        Self::validate_inner(&decimal).then(|| Self { integer, decimal })
-    }
-
-    pub fn decimal(&self) -> u32 {
-        self.decimal
-    }
-
-    /// Validates if decimal is between 0..10000
-    pub fn validate(&self) -> bool {
-        Self::validate_inner(&self.decimal)
-    }
-
-    fn validate_inner(decimal: &u32) -> bool {
-        (0..10000).contains(decimal)
+    pub fn inner_mut(&mut self) -> &mut Int {
+        &mut self.integer
     }
 }
 
 impl ZzUAmount {
+    pub fn new(mut integer: BigUint, decimal: u32) -> Option<Self> {
+        if decimal > 10_000 {
+            return None;
+        }
+
+        integer *= 10_000u32;
+        integer += decimal;
+
+        Some(Self { integer })
+    }
+
     pub fn to_i_amount(self) -> ZzIAmount {
         ZzIAmount {
             integer: num_bigint::BigInt::from_biguint(num_bigint::Sign::Plus, self.integer),
-            decimal: self.decimal,
         }
     }
 }
 
 impl ZzIAmount {
+    pub fn new(mut integer: BigInt, decimal: u32) -> Option<Self> {
+        if decimal > 10_000 {
+            return None;
+        }
+
+        integer *= 10_000;
+        if integer.sign() == Sign::Minus {
+            integer -= decimal;
+        } else {
+            integer += decimal;
+        }
+
+        Some(Self { integer })
+    }
+
     pub fn unary(self) -> Self {
         Self {
             integer: -self.integer,
-            decimal: self.decimal,
         }
     }
 
     pub fn zero() -> Self {
-        Self {
-            integer: 0.into(),
-            decimal: 0,
-        }
+        Self { integer: 0.into() }
     }
 
-    pub fn add(&mut self, other: &ZzIAmount) {
-        self.decimal += other.decimal;
-        if self.validate() {
-            self.integer += &other.integer;
-        } else {
-            self.decimal -= 10_000;
-            self.integer += &other.integer + 1;
-        }
+    pub fn add(&mut self, other: &Self) {
+        self.integer += &other.integer;
     }
 
-    pub fn sub(&mut self, other: &ZzIAmount) {
-        if self.decimal < other.decimal {
-            self.decimal += 10_000 - other.decimal;
-            self.integer -= &other.integer + 1;
-        } else {
-            self.decimal -= other.decimal;
-            self.integer -= &other.integer;
-        }
+    pub fn sub(&mut self, other: &Self) {
+        self.integer -= &other.integer;
     }
 
     pub fn greater_eq_than(&self, other: ZzUAmount) -> bool {
         if self.integer.sign() != Sign::Minus {
             let other_int: BigInt = other.integer.into();
             self.integer >= other_int
-                || (self.integer == other_int && self.decimal >= other.decimal)
         } else {
             false
         }
     }
 }
 
-impl<Int: IntFromBytes> std::fmt::Display for ZzAmount<Int> {
+impl std::fmt::Display for ZzAmount<BigInt> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.decimal == 0 {
-            write!(f, "{}", self.integer)
+        let (sign, abs_val) = if self.integer.sign() == Sign::Minus {
+            ("-", -&self.integer)
         } else {
-            write!(f, "{}.{:0>4}", self.integer, self.decimal)
+            ("", self.integer.clone())
+        };
+
+        let int = &abs_val / 10_000;
+        let decimal: BigInt = &abs_val % 10_000;
+
+        if decimal == BigInt::ZERO {
+            write!(f, "{sign}{int}")
+        } else {
+            write!(f, "{sign}{int}.{decimal:0>4}")
         }
     }
 }
 
-impl<Int: IntFromBytes> Serialize for ZzAmount<Int> {
+impl std::fmt::Display for ZzAmount<BigUint> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let decimal = &self.integer % 10_000u32;
+        let int = &self.integer / 10_000u32;
+
+        if decimal == BigUint::ZERO {
+            write!(f, "{int}")
+        } else {
+            write!(f, "{int}.{decimal:0>4}")
+        }
+    }
+}
+
+impl Serialize for ZzAmount<BigInt> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.collect_str(self)
+    }
+}
+
+impl Serialize for ZzAmount<BigUint> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
@@ -145,11 +167,9 @@ impl fake::Dummy<Faker> for ZzAmount<BigInt> {
         use num_bigint::ToBigInt;
 
         let integer: i128 = rng.random();
-        let decimal: u32 = rng.random_range(0..10000);
 
         Self {
             integer: integer.to_bigint().unwrap(),
-            decimal,
         }
     }
 }
@@ -159,11 +179,9 @@ impl fake::Dummy<Faker> for ZzAmount<BigUint> {
         use num_bigint::ToBigUint;
 
         let integer: u128 = rng.random();
-        let decimal: u32 = rng.random_range(0..10000);
 
         Self {
             integer: integer.to_biguint().unwrap(),
-            decimal,
         }
     }
 }
@@ -173,120 +191,88 @@ mod tests {
     use super::*;
     use num_bigint::ToBigInt;
 
+    fn amt_i_parts(int: i64, dec: u32) -> ZzIAmount {
+        ZzIAmount::new(int.to_bigint().unwrap(), dec).unwrap()
+    }
+
     #[test]
     fn test_display_positive_integer() {
-        let amt = ZzAmount::new(123.to_bigint().unwrap(), 0).unwrap();
+        let amt = amt_i_parts(123, 0); // 123.0000
         assert_eq!(amt.to_string(), "123");
     }
 
     #[test]
     fn test_display_positive_decimal() {
-        let amt = ZzAmount::new(123.to_bigint().unwrap(), 4567).unwrap();
+        let amt = amt_i_parts(123, 4567); // 123.4567
         assert_eq!(amt.to_string(), "123.4567");
     }
 
     #[test]
     fn test_display_negative_integer() {
-        let amt = ZzAmount::new((-789).to_bigint().unwrap(), 0).unwrap();
+        let amt = amt_i_parts(-789, 0);
         assert_eq!(amt.to_string(), "-789");
     }
 
     #[test]
     fn test_display_negative_decimal() {
-        let amt = ZzAmount::new((-789).to_bigint().unwrap(), 1234).unwrap();
+        let amt = amt_i_parts(-789, 1234);
         assert_eq!(amt.to_string(), "-789.1234");
     }
 
     #[test]
-    fn test_invalid_decimal() {
-        assert!(ZzAmount::new(1.to_bigint().unwrap(), 10000).is_none());
-    }
-
-    // ---------- Tests for add and sub ----------
-    #[test]
-    fn test_add_without_carry() {
-        let mut a = ZzIAmount::new(10.to_bigint().unwrap(), 2000).unwrap();
-        let b = ZzIAmount::new(5.to_bigint().unwrap(), 3000).unwrap();
+    fn test_add_simple() {
+        let mut a = amt_i_parts(10, 0); // 10.0000
+        let b = amt_i_parts(5, 2500); // 5.2500
 
         a.add(&b);
-
-        // 2000 + 3000 = 5000 < 10000, no carry
-        assert_eq!(a.integer, 15.to_bigint().unwrap());
-        assert_eq!(a.decimal, 5000);
+        assert_eq!(a.to_string(), "15.2500");
     }
 
     #[test]
-    fn test_add_with_carry() {
-        let mut a = ZzIAmount::new(10.to_bigint().unwrap(), 7000).unwrap();
-        let b = ZzIAmount::new(5.to_bigint().unwrap(), 4000).unwrap();
-
-        a.add(&b);
-
-        // 7000 + 4000 = 11000 -> carry 1 to integer, decimal = 1000
-        assert_eq!(a.integer, 16.to_bigint().unwrap());
-        assert_eq!(a.decimal, 1000);
-    }
-
-    #[test]
-    fn test_add_with_exact_carry_boundary() {
-        let mut a = ZzIAmount::new(10.to_bigint().unwrap(), 6000).unwrap();
-        let b = ZzIAmount::new(5.to_bigint().unwrap(), 4000).unwrap();
-
-        a.add(&b);
-
-        // 6000 + 4000 = 10000 -> carry 1, decimal = 0
-        assert_eq!(a.integer, 16.to_bigint().unwrap());
-        assert_eq!(a.decimal, 0);
-    }
-
-    #[test]
-    fn test_sub_without_borrow() {
-        let mut a = ZzIAmount::new(10.to_bigint().unwrap(), 5000).unwrap();
-        let b = ZzIAmount::new(5.to_bigint().unwrap(), 3000).unwrap();
+    fn test_sub_simple() {
+        let mut a = amt_i_parts(10, 5000); // 10.5000
+        let b = amt_i_parts(5, 3000); // 5.3000
 
         a.sub(&b);
-
-        // 5000 - 3000 = 2000, integer = 10 - 5 = 5
-        assert_eq!(a.integer, 5.to_bigint().unwrap());
-        assert_eq!(a.decimal, 2000);
+        assert_eq!(a.to_string(), "5.2000");
     }
 
     #[test]
-    fn test_sub_with_borrow() {
-        let mut a = ZzIAmount::new(10.to_bigint().unwrap(), 2000).unwrap();
-        let b = ZzIAmount::new(5.to_bigint().unwrap(), 3000).unwrap();
+    fn test_sub_resulting_in_negative() {
+        let mut a = amt_i_parts(0, 1); // 0.0001
+        let b = amt_i_parts(0, 2); // 0.0002
 
         a.sub(&b);
-
-        // 2000 < 3000, borrow: decimal = 2000 + 10000 - 3000 = 9000
-        // integer = 10 - (5 + 1) = 4
-        assert_eq!(a.integer, 4.to_bigint().unwrap());
-        assert_eq!(a.decimal, 9000);
+        assert_eq!(a.to_string(), "-0.0001");
     }
 
     #[test]
-    fn test_sub_with_exact_borrow_boundary() {
-        let mut a = ZzIAmount::new(10.to_bigint().unwrap(), 0).unwrap();
-        let b = ZzIAmount::new(5.to_bigint().unwrap(), 1).unwrap();
-
-        a.sub(&b);
-
-        // borrow: decimal = 0 + 10000 - 1 = 9999
-        // integer = 10 - (5 + 1) = 4
-        assert_eq!(a.integer, 4.to_bigint().unwrap());
-        assert_eq!(a.decimal, 9999);
-    }
-
-    #[test]
-    fn test_add_and_sub_inverse_relationship() {
-        let a = ZzIAmount::new(10.to_bigint().unwrap(), 5000).unwrap();
-        let b = ZzIAmount::new(3.to_bigint().unwrap(), 2500).unwrap();
+    fn test_add_and_sub_inverse() {
+        let a = amt_i_parts(10, 1234); // 10.1234
+        let b = amt_i_parts(3, 9876); // 3.9876
 
         let mut c = a.clone();
         c.add(&b);
         c.sub(&b);
 
-        assert_eq!(c.integer, a.integer);
-        assert_eq!(c.decimal, a.decimal);
+        assert_eq!(c, a);
+    }
+
+    #[test]
+    fn test_equal_numbers_results_in_zero() {
+        let mut a = amt_i_parts(7, 7777);
+        let b = amt_i_parts(7, 7777);
+
+        a.sub(&b);
+        assert_eq!(a, ZzIAmount::zero());
+    }
+
+    #[test]
+    fn test_sub_zero_minus_smallest_fraction() {
+        let mut a = amt_i_parts(0, 0); // 0
+        let b = amt_i_parts(0, 1); // 0.0001
+
+        a.sub(&b);
+        assert_eq!(a.to_string(), "-0.0001");
     }
 }

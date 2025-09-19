@@ -6,12 +6,11 @@ use nom::{
     combinator::{eof, map_res, opt, recognize},
     sequence::terminated,
 };
-use num_bigint::BigUint;
 
 use crate::{
     ZzParseOptions,
     domain::transaction::{ZzTx, ZzTxType},
-    parsers::{csv_parser::CsvParserResult, nom::zz_amount::parse_zzamount},
+    parsers::{csv_parser::CsvParserResult, nom::zz_amount::parse_zzamount_u},
 };
 
 fn wrap_field<'a, P: Parser<&'a str, Error = nom::error::Error<&'a str>>>(
@@ -83,7 +82,7 @@ pub fn parse_zztx_csv<'a>(
 
     let zz_amount_parser = wrap_field(
         map_res(recognize((digit1, opt((char('.'), digit1)))), |s: &str| {
-            let (_, amt) = parse_zzamount::<BigUint>(parse_options, s)?;
+            let (_, amt) = parse_zzamount_u(parse_options, s)?;
             Ok::<_, nom::Err<nom::error::Error<&str>>>(amt)
         }),
         parse_options,

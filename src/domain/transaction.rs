@@ -180,7 +180,7 @@ fn produce_effect(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::common::zz_amount::{ZzAmount, ZzUAmount};
+    use crate::common::zz_amount::{ZzIAmount, ZzUAmount};
 
     fn make_amount(val: u64) -> ZzUAmount {
         ZzUAmount::new(val.into(), 0).unwrap()
@@ -252,9 +252,9 @@ mod tests {
                 tx,
                 Some(&ZzClientBalance {
                     client_id: 1,
-                    available: ZzAmount::new(30.into(), 0).unwrap(),
-                    held: ZzAmount::zero(),
-                    total: ZzAmount::zero(),
+                    available: ZzIAmount::new(30.into(), 0).unwrap(),
+                    held: ZzIAmount::zero(),
+                    total: ZzIAmount::zero(),
                     locked: false,
                 }),
             )

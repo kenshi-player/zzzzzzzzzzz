@@ -25,7 +25,9 @@ As a matter of taste, I usually name the public structs and functions in an iden
 
 ### Testing
 
-I use a lot of AI to help create tests and do static assertions. So expect some repeated code in the tests.
+I use a lot of AI to help create unit tests and do static assertions. So expect some repeated code in those tests.
+
+For integration test, I took care to create test cases that actually touch the edge cases. The `tests/test_cases.rs` has some comments explaining each test
 
 ## IO
 
@@ -92,12 +94,12 @@ From the description of dispute: <The transaction shouldn't be reversed yet but 
 
 From the Overview section and how partner error is mentioned only for Dispute, Resolve, and Chargeback. Deposit and Withdraw will be considered as an "internal" API. I'm arguing this because a partner wouldn't have the transaction id for a deposit before it happened, so this will also be considered partner error.
 
-1. If a transaction exists but the client's id is wrong in the event, it'll be ignored (keeping consistent that bad requests are ignored)
+1. If a transaction exists but the client's id is wrong in the event, it'll be ignored (keeping consistent that bad partner requests are ignored)
 2. Serialization will be strict (can't have excessive fields or missing requried), it'll fail the program
 3. If a dispute references a withdrawal, the dispute will be ignored
 4. If a dispute references a transaction that happened later, the dispute will be ignored
 5. A client's amount may be negative (deposit -> withdraw -> dispute -> chargeback)
-6. Because withdraws and deposits are considered internal, I suppose they respect id uniquess
+6. Because withdrawals and deposits are considered internal, I suppose they respect id uniquess
 7. If a dispute is resolved, it may be disputed again
 
 ## Design decisions

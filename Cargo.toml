@@ -13,3 +13,4 @@ num-bigint = { version = "0.4.6", features = ["serde"] }
 fake = { version = "4.4.0", features = ["derive"] }
 strum = { version = "0.27.2", features = ["derive"] }
 kanal = "0.1.1"
+paste = "1.0.15"

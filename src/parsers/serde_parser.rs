@@ -30,8 +30,9 @@ impl ZzTxSerde<'_> {
             return CsvParserResult::MissingRequiredField;
         };
         let amount = if let Some(amount) = self.amount {
-            let Ok(amount) = crate::parsers::nom::zz_amount::parse_zzamount(parse_options, amount)
-                .map(|(_, res)| res)
+            let Ok(amount) =
+                crate::parsers::nom::zz_amount::parse_zzamount_u(parse_options, amount)
+                    .map(|(_, res)| res)
             else {
                 return CsvParserResult::Failed;
             };

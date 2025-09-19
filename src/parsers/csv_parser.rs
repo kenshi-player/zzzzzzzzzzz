@@ -40,7 +40,7 @@ pub fn csv_zztx_parser_streaming<ZzTxParser: CsvZzTxParserTrait>(
     let mut tail = String::with_capacity(128);
 
     let mut tx_map = TransactionHashMapImpl::default();
-    let mut client_balance_map = vec![None; u16::MAX as usize + 1];
+    let mut client_balance_map: Vec<Option<ZzClientBalance>> = vec![None; u16::MAX as usize + 1];
     // used to keep track if having/not having headers was verified.
     let mut is_first = true;
 
@@ -52,13 +52,17 @@ pub fn csv_zztx_parser_streaming<ZzTxParser: CsvZzTxParserTrait>(
         };
     }
 
+    // SAFETY: client_map is instantiated with enough entries to take any u16
     let mut process_tx = |zztx: ZzTx| {
         let client_id = zztx.client_id;
-        if let Some(effect) =
-            tx_map.insert_transaction(zztx, client_balance_map[client_id as usize].as_ref())
-        {
-            // SAFETY: client_map is instantiated with enough entries to take any u16
-            client_balance_map[client_id as usize]
+        let entry = &mut client_balance_map[client_id as usize];
+
+        if entry.as_ref().is_some_and(|x| x.locked) {
+            return;
+        }
+
+        if let Some(effect) = tx_map.insert_transaction(zztx, entry.as_ref()) {
+            entry
                 .get_or_insert_with(|| ZzClientBalance {
                     client_id,
                     available: ZzIAmount::zero(),

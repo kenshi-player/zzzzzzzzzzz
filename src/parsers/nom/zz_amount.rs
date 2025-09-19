@@ -6,17 +6,43 @@ use nom::{
     combinator::opt,
     sequence::preceded,
 };
+use num_bigint::{BigInt, BigUint};
 
 use crate::{
     ZzParseOptions,
-    common::zz_amount::{IntFromBytes, ZzAmount},
+    common::zz_amount::{IntFromBytes, ZzIAmount, ZzUAmount},
 };
 
-/// nom parser for ZzAmount
-pub fn parse_zzamount<'a, Int: IntFromBytes>(
+/// nom parser for ZzIAmount
+pub fn parse_zzamount_i<'a>(
     parse_options: &ZzParseOptions,
     initial_input: &'a str,
-) -> IResult<&'a str, ZzAmount<Int>> {
+) -> IResult<&'a str, ZzIAmount> {
+    let (input, (int, decimal)) = parse_zzamount_inner::<BigInt>(parse_options, initial_input)?;
+
+    Ok((
+        input,
+        ZzIAmount::new(int, decimal).expect("Parser above guarantees only 4 digits"),
+    ))
+}
+
+/// nom parser for ZzUAmount
+pub fn parse_zzamount_u<'a>(
+    parse_options: &ZzParseOptions,
+    initial_input: &'a str,
+) -> IResult<&'a str, ZzUAmount> {
+    let (input, (int, decimal)) = parse_zzamount_inner::<BigUint>(parse_options, initial_input)?;
+
+    Ok((
+        input,
+        ZzUAmount::new(int, decimal).expect("Parser above guarantees only 4 digits"),
+    ))
+}
+
+fn parse_zzamount_inner<'a, Int: IntFromBytes>(
+    parse_options: &ZzParseOptions,
+    initial_input: &'a str,
+) -> IResult<&'a str, (Int, u32)> {
     let (input, sign) = opt(alt((char('+'), char('-')))).parse(initial_input)?;
 
     // Parse integer part
@@ -56,10 +82,7 @@ pub fn parse_zzamount<'a, Int: IntFromBytes>(
         0
     };
 
-    Ok((
-        input,
-        ZzAmount::new(int, decimal).expect("Parser above guarantees only 4 digits"),
-    ))
+    Ok((input, (int, decimal)))
 }
 
 #[cfg(test)]
@@ -68,47 +91,46 @@ mod tests {
 
     use super::*;
     use fake::{Fake, Faker};
-    use num_bigint::{BigInt, BigUint};
 
     #[test]
     fn test_parse_integer() {
         let opts = ZzParseOptions::default();
-        let (_, amt) = parse_zzamount::<BigUint>(&opts, "123").unwrap();
+        let (_, amt) = parse_zzamount_i(&opts, "123").unwrap();
         assert_eq!(amt.to_string(), "123");
     }
 
     #[test]
     fn test_parse_integer_negative() {
         let opts = ZzParseOptions::default();
-        let (_, amt) = parse_zzamount::<BigInt>(&opts, "-456").unwrap();
+        let (_, amt) = parse_zzamount_i(&opts, "-456").unwrap();
         assert_eq!(amt.to_string(), "-456");
     }
 
     #[test]
     fn test_parse_decimal() {
         let opts = ZzParseOptions::default();
-        let (_, amt) = parse_zzamount::<BigInt>(&opts, "123.7890").unwrap();
+        let (_, amt) = parse_zzamount_i(&opts, "123.7890").unwrap();
         assert_eq!(amt.to_string(), "123.7890");
     }
 
     #[test]
     fn test_parse_negative_decimal() {
         let opts = ZzParseOptions::default();
-        let (_, amt) = parse_zzamount::<BigInt>(&opts, "-456.0123").unwrap();
+        let (_, amt) = parse_zzamount_i(&opts, "-456.0123").unwrap();
         assert_eq!(amt.to_string(), "-456.0123");
     }
 
     #[test]
     fn test_uint_fails_on_negative() {
         let opts = ZzParseOptions::default();
-        assert!(parse_zzamount::<BigUint>(&opts, "-456").is_err());
-        assert!(parse_zzamount::<BigUint>(&opts, "-456.0123").is_err());
+        assert!(parse_zzamount_u(&opts, "-456").is_err());
+        assert!(parse_zzamount_u(&opts, "-456.0123").is_err());
     }
 
     #[test]
     fn test_parse_decimal_truncation() {
         let opts = ZzParseOptions::default();
-        let (_, amt) = parse_zzamount::<BigInt>(&opts, "1.123456").unwrap();
+        let (_, amt) = parse_zzamount_u(&opts, "1.123456").unwrap();
         // Only first 4 digits of decimal are kept
         assert_eq!(amt.to_string(), "1.1234");
     }
@@ -117,8 +139,8 @@ mod tests {
     fn test_parse_invalid_decimal_truncates() {
         let opts = ZzParseOptions::default();
         // Parser takes only first 4 decimal digits, ignores rest
-        let (_, amt) = parse_zzamount::<BigInt>(&opts, "12345.99999").unwrap();
-        assert_eq!(amt.decimal(), 9999);
+        let (_, mut amt) = parse_zzamount_u(&opts, "12345.99999").unwrap();
+        assert_eq!(amt.inner_mut().clone() % 10_000u32, (9999u32).into());
     }
 
     #[test]
@@ -129,11 +151,11 @@ mod tests {
         };
 
         // Exactly 5 digits works
-        let (_, amt) = parse_zzamount::<BigUint>(&opts, "12345").unwrap();
+        let (_, amt) = parse_zzamount_u(&opts, "12345").unwrap();
         assert_eq!(amt.to_string(), "12345");
 
         // More than 5 digits fails
-        let result = parse_zzamount::<BigUint>(&opts, "123456");
+        let result = parse_zzamount_u(&opts, "123456");
         assert!(result.is_err(), "Expected error for exceeding max digits");
     }
 
@@ -145,7 +167,7 @@ mod tests {
         };
 
         let big_num = "9".repeat(50);
-        let (_, amt) = parse_zzamount::<BigUint>(&opts, &big_num).unwrap();
+        let (_, amt) = parse_zzamount_u(&opts, &big_num).unwrap();
         assert_eq!(amt.to_string(), big_num);
     }
 
@@ -156,7 +178,15 @@ mod tests {
         for _ in 0..500 {
             let amount: ZzUAmount = Faker.fake();
             let amount_ser = format!("{amount}");
-            let (_, amount_de) = parse_zzamount(&opts, &amount_ser).unwrap();
+            let (_, amount_de) = parse_zzamount_u(&opts, &amount_ser).unwrap();
+
+            assert_eq!(amount, amount_de);
+        }
+
+        for _ in 0..500 {
+            let amount: ZzIAmount = Faker.fake();
+            let amount_ser = format!("{amount}");
+            let (_, amount_de) = parse_zzamount_i(&opts, &amount_ser).unwrap();
 
             assert_eq!(amount, amount_de);
         }
@@ -176,7 +206,7 @@ mod tests {
         for (amount, input, output) in cases {
             assert_eq!(amount.to_string(), output);
 
-            let (_, amount_de) = parse_zzamount::<BigUint>(&opts, input).unwrap();
+            let (_, amount_de) = parse_zzamount_u(&opts, input).unwrap();
             assert_eq!(amount, amount_de);
         }
     }
