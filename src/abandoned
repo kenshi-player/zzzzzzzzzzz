@@ -1,0 +1,149 @@
+//! WIP, the objective of this implementation is to read the file in parallel and dispatch the read
+//! blocks to the processor in order.
+
+use std::sync::{atomic::{AtomicBool, AtomicU8, AtomicUsize, Ordering}, Arc, Mutex};
+
+use crate::ZzExecuteOptions;
+
+pub fn prepare_io_loop(exec_opts: &ZzExecuteOptions) -> kanal::Receiver<Arc<Mutex<Vec<u8>>>> {
+    // let (ring_buf_of_bufs, rx) = IoOrchestrator::create(exec_opts);
+    // let total_threads = exec_opts.io_threads.map(|x| x.get()).unwrap_or(2);
+
+    // let threads = (0..total_threads).map(std::thread::spawn({
+    //     move || {
+    //     }
+    // }));
+
+    rx
+}
+
+fn execute_io_thread(
+    rx_reader: kanal::Receiver<OrchToReader>,
+    tx_reader: kanal::Sender<ReaderToOrch>,
+) {
+    loop {
+        tx_reader.send(ReaderToOrch::NeedBuf);
+        let Ok(OrchToReader { buf, offset, buf_idx }) = rx_reader.recv() else {
+            return;
+        };
+
+    }
+}
+
+enum ReaderToOrch {
+    FinishedReading { buf_idx: usize },
+    FileDone { buf_idx: usize },
+}
+
+struct OrchToReader {
+    buf: Vec<Arc<Mutex<Option<Vec<u8>>>>>, 
+    offset: usize,
+    buf_idx: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum IoOrchestratorAvailability {
+    Available,
+    Reading,
+    Read,
+    Processing,
+}
+
+pub struct ProcessorToIoOrch;
+
+pub struct OrchToProcessor(Vec<Arc<Mutex<Vec<u8>>>>);
+
+struct IoOrchestrator {
+    buffers: Vec<Arc<Mutex<Option<Vec<u8>>>>>,
+    availability: Mutex<Vec<IoOrchestratorAvailability>>,
+    head: AtomicU8,
+    tail: AtomicU8,
+    offset: AtomicUsize,
+    done: AtomicBool,
+    /// Send buffer to reader
+    tx_orch_to_reader: kanal::Sender<OrchToReader>,
+    /// Notify orchestrator that buffer has been read or that reached EOF
+    rx_reader_to_orch: kanal::Receiver<ReaderToOrch>,
+    /// Send buffer to processor
+    tx_orch_to_processor: kanal::Sender<OrchToProcessor>,
+    /// Tell orchestrator that head has been processed
+    rx_processor_to_orch: kanal::Receiver<ProcessorToIoOrch>,
+}
+
+pub struct IoOrchestratorCreationOutput {
+    rx_orch_to_reader: kanal::Receiver<OrchToReader>,
+    tx_reader_to_orch: kanal::Sender<ReaderToOrch>,
+    rx_orch_to_processor: kanal::Receiver<OrchToProcessor>,
+    tx_processor_to_orch: kanal::Sender<ProcessorToIoOrch>,
+    orch: Arc<IoOrchestrator>,
+}
+
+impl IoOrchestrator {
+    /// Instantiates the orchestrator and also starts its thread
+    fn create(exec_opts: &ZzExecuteOptions) -> IoOrchestratorCreationOutput {
+        let buffers_mb = (exec_opts.buffers_mb.map(|x| x.get()).unwrap_or(16) as usize) * 1024 * 1024;
+        let total_buffers = exec_opts.total_buffers.map(|x| x.get()).unwrap_or(10) as usize;
+        // Create only first buffer, other buffers may be created on demand
+        let buffers = (0..total_buffers).map(|_| Arc::new(Mutex::new(None))).collect();
+
+        let (tx_orch_to_reader, rx_orch_to_reader) = kanal::unbounded();
+        let (tx_reader_to_orch, rx_reader_to_orch) = kanal::unbounded();
+        let (tx_orch_to_processor, rx_orch_to_processor) = kanal::unbounded();
+        let (tx_processor_to_orch, rx_processor_to_orch) = kanal::unbounded();
+
+        let orch = Arc::new(IoOrchestrator {
+            buffers,
+            availability: Mutex::new((0..total_buffers).map(|_| IoOrchestratorAvailability::Available).collect()),
+            head: 0.into(),
+            tail: (total_buffers - 1).into(),
+            offset: 0.into(),
+            done: false.into(),
+            tx_orch_to_reader,
+            rx_reader_to_orch,
+            tx_orch_to_processor,
+            rx_processor_to_orch,
+        });
+
+        IoOrchestratorCreationOutput {
+            rx_orch_to_reader,
+            tx_reader_to_orch,
+            rx_orch_to_processor,
+            tx_processor_to_orch,
+            orch,
+        }
+    }
+
+    fn orchestrate(this: Arc<Self>) {
+        std::thread::spawn({
+            || {
+                
+            }
+        });
+    }
+
+    fn orchestrate_reader(&self) {
+        loop {
+            match msg {
+                ReaderToOrch::FinishedReading { buf_idx } => self.mark_as_read(buf_idx),
+                ReaderToOrch::FileDone { buf_idx } => todo!(),
+            }
+        }
+    }
+
+    fn mark_as_read(&self, buf_idx: usize) {
+        let mut availability = self.availability.lock().unwrap();
+        let ref_mut = availability.get_mut(buf_idx).unwrap_or_else(|| panic!("Reader sending non existent buf_idx {buf_idx}"));
+        assert_eq!(*ref_mut, IoOrchestratorAvailability::Reading, "Reader sending buf_idx for buffer that is not reading");
+        *ref_mut = IoOrchestratorAvailability::Read;
+    }
+
+    fn mark_as_done(&self, buf_idx: usize) {
+        self.done.store(true, Ordering::Relaxed);
+        self.mark_as_read(buf_idx);
+    }
+
+    /// Returns false if nothing to do
+    fn send_next_buf(&self) -> bool {
+        let (head, tail) = self.head.load()
+    }
+}
