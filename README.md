@@ -4,6 +4,8 @@ A project about parsing csv's and handling disputes...
 
 All quotes to the spec will be wrapped like < quote >
 
+I used clap to parse arguments and I also added some options to show flexibility of solution. Run `cargo run -- --help` to see options
+
 ## Objective
 
 Read csv file with information about client transactions and calculate the final balance of the clients. Each row of the input csv represents a transaction where the index maps to a monotonically increasing unit of time.
@@ -127,6 +129,7 @@ If we were dealing with concurrent TCP streams, the requirements would change be
 5. num-bigint: for implementation of ZzAmount (allows for arbitrary big integers)
 6. strum and serde_plain: help DRY some code
 7. fake: simple fuzz tests
+8. clap: configuring the program's execution
 
 ## AI usage
 
