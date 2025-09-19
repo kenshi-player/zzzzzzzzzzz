@@ -6,8 +6,8 @@ pub mod zz_amount;
 pub struct CsvZzTxParserNomImpl;
 
 impl CsvZzTxParserTrait for CsvZzTxParserNomImpl {
-    fn deserialize_headers(&mut self, header: &str) -> bool {
-        tx_parser::parse_zztx_csv_headers(header).is_ok()
+    fn deserialize_headers(&mut self, parse_options: &crate::ZzParseOptions, header: &str) -> bool {
+        tx_parser::parse_zztx_csv_headers(parse_options, header).is_ok()
     }
 
     fn deserialize_row(

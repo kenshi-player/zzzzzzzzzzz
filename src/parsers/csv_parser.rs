@@ -20,7 +20,7 @@ pub enum CsvParserResult {
 pub trait CsvZzTxParserTrait {
     /// If the header matches the expected ZzTx headers. This will be used to handle if the header
     /// is present or not.
-    fn deserialize_headers(&mut self, header: &str) -> bool;
+    fn deserialize_headers(&mut self, parse_options: &crate::ZzParseOptions, header: &str) -> bool;
     /// Parse a row, the CsvParserControl
     fn deserialize_row(&mut self, parse_options: &ZzParseOptions, row: &str) -> CsvParserResult;
 }
@@ -92,7 +92,7 @@ pub fn csv_zztx_parser_streaming<ZzTxParser: CsvZzTxParserTrait>(
                 continue;
             }
 
-            if parser.deserialize_headers(first_row) {
+            if parser.deserialize_headers(parse_options, first_row) {
                 buf = rest;
             }
             is_first = false;
@@ -172,10 +172,8 @@ pub fn csv_zztx_parser_streaming<ZzTxParser: CsvZzTxParserTrait>(
         }
     }
 
-    for client in &mut client_balance_map {
-        if let Some(client) = client {
-            client.compute_total();
-        }
+    for client in client_balance_map.iter_mut().flatten() {
+        client.compute_total();
     }
 
     client_balance_map

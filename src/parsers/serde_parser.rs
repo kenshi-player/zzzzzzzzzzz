@@ -93,7 +93,11 @@ static HEADERS_RECORD: LazyLock<csv::StringRecord> = LazyLock::new(|| {
 });
 
 impl CsvZzTxParserTrait for CsvZzTxParserSerdeImpl {
-    fn deserialize_headers(&mut self, header: &str) -> bool {
+    fn deserialize_headers(
+        &mut self,
+        _parse_options: &crate::ZzParseOptions,
+        header: &str,
+    ) -> bool {
         let mut rdr = csv::Reader::from_reader(header.as_bytes());
         rdr.headers()
             .is_ok_and(|headers| headers == &*HEADERS_RECORD)

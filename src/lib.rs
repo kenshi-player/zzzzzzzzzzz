@@ -88,6 +88,9 @@ pub struct ZzParseOptions {
     /// The maximum line width, anything over this will fail
     #[arg(long, default_value_t = 4096)]
     max_line_width: usize,
+    /// If space trimming should be applied
+    #[arg(long, default_value_t = false)]
+    dont_trim_spaces: bool,
 }
 
 #[allow(dead_code)]
@@ -112,6 +115,7 @@ impl Default for ZzParseOptions {
             on_excessive_field: ParsingStrictnessOptions::Fail,
             on_parse_error: ParsingStrictnessOptions::Fail,
             max_line_width: 4096,
+            dont_trim_spaces: false,
         }
     }
 }

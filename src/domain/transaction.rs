@@ -96,7 +96,8 @@ impl TransactionMap for TransactionHashMapImpl {
         let tx_id = transaction.tx_id;
         let client_id = transaction.client_id;
 
-        let (state, effect) = produce_effect(self.map.get(&(client_id, tx_id)), transaction, balance)?;
+        let (state, effect) =
+            produce_effect(self.map.get(&(client_id, tx_id)), transaction, balance)?;
 
         self.map.insert((client_id, tx_id), state);
         Some(effect)

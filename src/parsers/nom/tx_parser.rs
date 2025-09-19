@@ -16,23 +16,34 @@ use crate::{
 
 fn wrap_field<'a, P: Parser<&'a str, Error = nom::error::Error<&'a str>>>(
     parser: P,
+    parse_options: &ZzParseOptions,
 ) -> impl FnOnce(&'a str) -> IResult<&'a str, Option<P::Output>> {
     move |input: &str| {
-        let (input, (_, res, _)) = terminated(
-            (multispace0, opt(parser), multispace0),
-            alt((tag(","), eof)),
-        )
-        .parse(input)?;
+        macro_rules! terminated_parser {
+            ($parser:expr) => {
+                terminated($parser, alt((tag(","), eof))).parse(input)?
+            };
+        }
+
+        let (input, res) = if parse_options.dont_trim_spaces {
+            terminated_parser!(opt(parser))
+        } else {
+            let (input, (_, res, _)) = terminated_parser!((multispace0, opt(parser), multispace0));
+            (input, res)
+        };
 
         Ok((input, res))
     }
 }
 
-pub fn parse_zztx_csv_headers(input: &str) -> IResult<&str, ()> {
-    let (input, _) = wrap_field(tag("type"))(input)?;
-    let (input, _) = wrap_field(tag("client"))(input)?;
-    let (input, _) = wrap_field(tag("tx"))(input)?;
-    let (input, _) = wrap_field(tag("amount"))(input)?;
+pub fn parse_zztx_csv_headers<'a>(
+    parse_options: &ZzParseOptions,
+    input: &'a str,
+) -> IResult<&'a str, ()> {
+    let (input, _) = wrap_field(tag("type"), parse_options)(input)?;
+    let (input, _) = wrap_field(tag("client"), parse_options)(input)?;
+    let (input, _) = wrap_field(tag("tx"), parse_options)(input)?;
+    let (input, _) = wrap_field(tag("amount"), parse_options)(input)?;
 
     Ok((input, ()))
 }
@@ -57,23 +68,26 @@ pub fn parse_zztx_csv<'a>(
         map_res(digit1, str::parse::<u32>).parse(input)
     }
 
-    let tx_type_parser = wrap_field(alt((
-        tag("deposit"),
-        tag("withdrawal"),
-        tag("dispute"),
-        tag("resolve"),
-        tag("chargeback"),
-    )));
-    let client_id_parser = wrap_field(parse_u16);
-    let tx_id_parser = wrap_field(parse_u32);
+    let tx_type_parser = wrap_field(
+        alt((
+            tag("deposit"),
+            tag("withdrawal"),
+            tag("dispute"),
+            tag("resolve"),
+            tag("chargeback"),
+        )),
+        parse_options,
+    );
+    let client_id_parser = wrap_field(parse_u16, parse_options);
+    let tx_id_parser = wrap_field(parse_u32, parse_options);
 
-    let zz_amount_parser = wrap_field(map_res(
-        recognize((digit1, opt((char('.'), digit1)))),
-        |s: &str| {
+    let zz_amount_parser = wrap_field(
+        map_res(recognize((digit1, opt((char('.'), digit1)))), |s: &str| {
             let (_, amt) = parse_zzamount::<BigUint>(parse_options, s)?;
             Ok::<_, nom::Err<nom::error::Error<&str>>>(amt)
-        },
-    ));
+        }),
+        parse_options,
+    );
 
     // tx type
     let (input, tx_type_str) = tx_type_parser(input)?;
